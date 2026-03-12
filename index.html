@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Secure Vault</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: white; padding: 20px; }
+        .container { max-width: 500px; margin: auto; }
+        input, textarea, button { width: 100%; margin: 10px 0; padding: 12px; border-radius: 8px; border: none; box-sizing: border-box; }
+        textarea { height: 200px; background: #1e1e1e; color: #00ff00; font-family: monospace; }
+        button { background: #007bff; color: white; font-weight: bold; cursor: pointer; }
+        .sync-box { font-size: 0.8em; color: #888; border: 1px dashed #444; padding: 10px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Locked Vault</h2>
+        <input type="password" id="masterKey" placeholder="Enter Master Key">
+        <textarea id="notesArea" placeholder="Decrypted notes will appear here..."></textarea>
+        
+        <button onclick="saveNotes()">Encrypt & Save Locally</button>
+        <button onclick="loadNotes()" style="background:#28a745;">Unlock Notes</button>
+
+        <div class="sync-box">
+            <p><strong>To Sync to Another Device:</strong></p>
+            <button onclick="exportData()" style="background:#555;">Copy Encrypted Data</button>
+            <p>Click "Copy", send the text to your other device, and paste it into the box below:</p>
+            <input type="text" id="importBox" placeholder="Paste encrypted text here">
+            <button onclick="importData()" style="background:#555;">Import & Save</button>
+        </div>
+    </div>
+
+    <script>
+        // SAVE: Scramble text and save to phone memory
+        function saveNotes() {
+            const key = document.getElementById('masterKey').value;
+            const text = document.getElementById('notesArea').value;
+            if (!key) return alert("Enter a Master Key first!");
+            
+            const encrypted = CryptoJS.AES.encrypt(text, key).toString();
+            localStorage.setItem('my_vault_data', encrypted);
+            alert("Saved and Encrypted!");
+        }
+
+        // LOAD: Unscramble text from phone memory
+        function loadNotes() {
+            const key = document.getElementById('masterKey').value;
+            const encrypted = localStorage.getItem('my_vault_data');
+            if (!key || !encrypted) return alert("Key or Data missing!");
+
+            try {
+                const decrypted = CryptoJS.AES.decrypt(encrypted, key).toString(CryptoJS.enc.Utf8);
+                if (!decrypted) throw new Error();
+                document.getElementById('notesArea').value = decrypted;
+            } catch (e) {
+                alert("Wrong Master Key!");
+            }
+        }
+
+        // SYNC FUNCTIONS
+        function exportData() {
+            const data = localStorage.getItem('my_vault_data');
+            navigator.clipboard.writeText(data);
+            alert("Encrypted data copied to clipboard!");
+        }
+
+        function importData() {
+            const input = document.getElementById('importBox').value;
+            if (input) {
+                localStorage.setItem('my_vault_data', input);
+                alert("Data imported! Enter master key and click 'Unlock'.");
+            }
+        }
+    </script>
+</body>
+</html>
