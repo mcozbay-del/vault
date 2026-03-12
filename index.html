@@ -2,76 +2,123 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Secure Vault</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Vault Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #121212; color: white; padding: 20px; }
-        .container { max-width: 500px; margin: auto; }
-        input, textarea, button { width: 100%; margin: 10px 0; padding: 12px; border-radius: 8px; border: none; box-sizing: border-box; }
-        textarea { height: 200px; background: #1e1e1e; color: #00ff00; font-family: monospace; }
-        button { background: #007bff; color: white; font-weight: bold; cursor: pointer; }
-        .sync-box { font-size: 0.8em; color: #888; border: 1px dashed #444; padding: 10px; margin-top: 20px; }
+        body { background-color: #000; color: #fff; -webkit-tap-highlight-color: transparent; }
+        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h2>Locked Vault</h2>
-        <input type="password" id="masterKey" placeholder="Enter Master Key">
-        <textarea id="notesArea" placeholder="Decrypted notes will appear here..."></textarea>
-        
-        <button onclick="saveNotes()">Encrypt & Save Locally</button>
-        <button onclick="loadNotes()" style="background:#28a745;">Unlock Notes</button>
+<body class="p-4 flex flex-col min-h-screen">
 
-        <div class="sync-box">
-            <p><strong>To Sync to Another Device:</strong></p>
-            <button onclick="exportData()" style="background:#555;">Copy Encrypted Data</button>
-            <p>Click "Copy", send the text to your other device, and paste it into the box below:</p>
-            <input type="text" id="importBox" placeholder="Paste encrypted text here">
-            <button onclick="importData()" style="background:#555;">Import & Save</button>
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold tracking-tight">Vault<span class="text-blue-500">Pro</span></h1>
+        <div id="statusDot" class="w-3 h-3 rounded-full bg-red-500"></div>
+    </div>
+
+    <div id="authSection" class="glass p-6 rounded-2xl mb-4">
+        <input type="password" id="masterKey" placeholder="Enter Master Key" 
+               class="w-full bg-transparent border-b border-gray-600 py-2 focus:outline-none focus:border-blue-500 text-lg mb-4">
+        <button onclick="unlockVault()" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-semibold transition">Unlock Vault</button>
+    </div>
+
+    <div id="mainContent" class="hidden flex-1 flex flex-col">
+        <input type="text" id="search" placeholder="Search notes..." oninput="renderNotes()"
+               class="glass w-full px-4 py-3 rounded-xl mb-4 focus:outline-none focus:ring-1 focus:ring-blue-500">
+
+        <div id="notesList" class="space-y-3 flex-1 overflow-y-auto pb-24">
+            </div>
+    </div>
+
+    <div id="actionBar" class="hidden fixed bottom-6 left-4 right-4 glass p-4 rounded-3xl flex flex-col gap-3 shadow-2xl safe-area-bottom">
+        <textarea id="newNote" placeholder="Write a secret..." class="bg-transparent w-full focus:outline-none text-sm h-12"></textarea>
+        <div class="flex justify-between items-center">
+            <label class="cursor-pointer text-gray-400 hover:text-white">
+                <span class="text-xl">📷</span>
+                <input type="file" id="imageInput" accept="image/*" class="hidden" onchange="handleImage(event)">
+            </label>
+            <div id="imgPreview" class="text-xs text-blue-400 hidden">Image Attached</div>
+            <button onclick="addNote()" class="bg-white text-black px-6 py-2 rounded-full font-bold text-sm">Save Note</button>
         </div>
     </div>
 
     <script>
-        // SAVE: Scramble text and save to phone memory
-        function saveNotes() {
+        let db;
+        let vaultKey = "";
+        let attachedImage = "";
+
+        // 1. Database Setup (IndexedDB)
+        const request = indexedDB.open("VaultProDB", 1);
+        request.onupgradeneeded = e => {
+            db = e.target.result;
+            db.createObjectStore("notes", { keyPath: "id", autoIncrement: true });
+        };
+        request.onsuccess = e => db = e.target.result;
+
+        function unlockVault() {
             const key = document.getElementById('masterKey').value;
-            const text = document.getElementById('notesArea').value;
-            if (!key) return alert("Enter a Master Key first!");
+            if (key.length < 4) return alert("Key too short");
+            vaultKey = key;
+            document.getElementById('authSection').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+            document.getElementById('actionBar').classList.remove('hidden');
+            document.getElementById('statusDot').classList.replace('bg-red-500', 'bg-green-500');
+            renderNotes();
+        }
+
+        function handleImage(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                attachedImage = reader.result;
+                document.getElementById('imgPreview').classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function addNote() {
+            const text = document.getElementById('newNote').value;
+            if (!text && !attachedImage) return;
+
+            const noteObj = { text, image: attachedImage, date: new Date().toLocaleString() };
+            const encrypted = CryptoJS.AES.encrypt(JSON.stringify(noteObj), vaultKey).toString();
+
+            const transaction = db.transaction(["notes"], "readwrite");
+            transaction.objectStore("notes").add({ data: encrypted });
             
-            const encrypted = CryptoJS.AES.encrypt(text, key).toString();
-            localStorage.setItem('my_vault_data', encrypted);
-            alert("Saved and Encrypted!");
+            document.getElementById('newNote').value = "";
+            attachedImage = "";
+            document.getElementById('imgPreview').classList.add('hidden');
+            renderNotes();
         }
 
-        // LOAD: Unscramble text from phone memory
-        function loadNotes() {
-            const key = document.getElementById('masterKey').value;
-            const encrypted = localStorage.getItem('my_vault_data');
-            if (!key || !encrypted) return alert("Key or Data missing!");
+        function renderNotes() {
+            const list = document.getElementById('notesList');
+            const searchTerm = document.getElementById('search').value.toLowerCase();
+            list.innerHTML = "";
 
-            try {
-                const decrypted = CryptoJS.AES.decrypt(encrypted, key).toString(CryptoJS.enc.Utf8);
-                if (!decrypted) throw new Error();
-                document.getElementById('notesArea').value = decrypted;
-            } catch (e) {
-                alert("Wrong Master Key!");
-            }
-        }
-
-        // SYNC FUNCTIONS
-        function exportData() {
-            const data = localStorage.getItem('my_vault_data');
-            navigator.clipboard.writeText(data);
-            alert("Encrypted data copied to clipboard!");
-        }
-
-        function importData() {
-            const input = document.getElementById('importBox').value;
-            if (input) {
-                localStorage.setItem('my_vault_data', input);
-                alert("Data imported! Enter master key and click 'Unlock'.");
-            }
+            db.transaction("notes").objectStore("notes").getAll().onsuccess = e => {
+                e.target.result.reverse().forEach(item => {
+                    try {
+                        const bytes = CryptoJS.AES.decrypt(item.data, vaultKey);
+                        const note = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+                        
+                        if (note.text.toLowerCase().includes(searchTerm)) {
+                            const card = document.createElement('div');
+                            card.className = "glass p-4 rounded-2xl animate-in fade-in";
+                            card.innerHTML = `
+                                <p class="text-sm opacity-80">${note.text}</p>
+                                ${note.image ? `<img src="${note.image}" class="mt-3 rounded-lg w-full h-48 object-cover">` : ''}
+                                <div class="text-[10px] text-gray-500 mt-2">${note.date}</div>
+                            `;
+                            list.appendChild(card);
+                        }
+                    } catch (err) { /* Skipping notes that don't match key */ }
+                });
+            };
         }
     </script>
 </body>
